@@ -299,6 +299,8 @@ class EnhancedFigmaTestCaseGenerator:
                     'frame_info': {
                         'name': frame_name,
                         'section': section_display,
+                        'section_key': section_key,
+                        'platform': frame_data.get('platform', 'WEB'),
                         'dimensions': frame_data['dimensions'],
                         'index': i
                     },
@@ -3026,7 +3028,7 @@ def run_generation_enhanced(figma_token, file_key, scale, project_name):
         update_status_with_logs(90, 'Complete', ' ☁️ Uploading results to cloud storage...', 'progress')
         # Create a unique session ID
         sanitized_project = re.sub(r'[^a-zA-Z0-9_-]', '_', project_name)
-        session_id = f"{sanitized_project}_{int(time.time())}"  
+        session_id = f"{sanitized_project}_{int(time.time())}"
         
         # Upload analysis directory
         import shutil
@@ -3050,68 +3052,24 @@ def run_generation_enhanced(figma_token, file_key, scale, project_name):
         )
         upload_to_gcs(excel_filename, f"{session_id}/excel_report.xlsx")
         os.remove(excel_filename)
+
+        cloud_paths = {
+            'analysis': f"{session_id}/analysis.zip",
+            'test_cases': f"{session_id}/testcases.zip",
+            'excel': f"{session_id}/excel_report.xlsx"
+        }
         
         add_log('✅ Results uploaded to cloud storage', 'success')
         update_status_with_logs(95, 'Complete', ' ☁️ Results uploaded to cloud storage', 'success')
-        generation_status['results'] = {
-            'testCases': test_results.get('total_test_cases', 0),
-            'frames': total_frames,
-            'sections': total_sections,
-            'components': total_components,
-            'time': format_time(total_time),
-            'session_id': session_id,  # ✅ Add session ID
-            'analytics': {
-                'total_time': format_time(total_time),
-                'api_calls': generation_status['analytics']['api_calls'],
-                'tokens_used': generation_status['analytics']['tokens_used'],
-                'avg_time_per_frame': format_time(total_time / total_frames) if total_frames > 0 else '0s'
-            }
-        }
-        
-        add_log('☁️ Uploading results to cloud storage...', 'info')
-        
-        # Create a unique session ID
-        session_id = f"{project_name}_{int(time.time())}"
-        
-        # Upload analysis directory
-        import shutil
-        analysis_zip = f"temp_{session_id}_analysis.zip"
-        shutil.make_archive(analysis_zip.replace('.zip', ''), 'zip', ANALYSIS_DIR)
-        upload_to_gcs(analysis_zip, f"{session_id}/analysis.zip")
-        os.remove(analysis_zip)
-        
-        # Upload test cases directory
-        testcases_zip = f"temp_{session_id}_testcases.zip"
-        shutil.make_archive(testcases_zip.replace('.zip', ''), 'zip', TEST_CASES_DIR)
-        upload_to_gcs(testcases_zip, f"{session_id}/testcases.zip")
-        os.remove(testcases_zip)
-        
-        # Generate and upload Excel
-        excel_filename = f"{session_id}_test_cases.xlsx"
-        analyzer.generate_excel_report(
-            markdown_file=TEST_CASES_DIR,
-            project_name=project_name,
-            output_file=excel_filename
-        )
-        upload_to_gcs(excel_filename, f"{session_id}/excel_report.xlsx")
-        os.remove(excel_filename)
-        
-        add_log('✅ Results uploaded to cloud storage', 'success')
-        
-        generation_status['results'] = {
-            'testCases': test_results.get('total_test_cases', 0),
-            'frames': total_frames,
-            'sections': total_sections,
-            'components': total_components,
-            'time': format_time(total_time),
-            'session_id': session_id,  # ✅ Add session ID
-            'analytics': {
-                'total_time': format_time(total_time),
-                'api_calls': generation_status['analytics']['api_calls'],
-                'tokens_used': generation_status['analytics']['tokens_used'],
-                'avg_time_per_frame': format_time(total_time / total_frames) if total_frames > 0 else '0s'
-            }
-        }
+
+        # Preserve existing result details while adding session metadata
+        if not generation_status.get('results'):
+            generation_status['results'] = {}
+
+        generation_status['results'].update({
+            'session_id': session_id,
+            'cloudPaths': cloud_paths
+        })
         update_status_with_logs(100, 'Complete', '✅Project Completed', 'success')
     except Exception as e:
         import traceback
@@ -4708,7 +4666,10 @@ def get_real_analysis():
                         frame_count = len([d for d in os.listdir(section_path) 
                                          if os.path.isdir(os.path.join(section_path, d))])
                     
-                    test_case_count = count_section_test_cases(section.get('display_name', ''))
+                    test_case_count = count_section_test_cases(
+                        section.get('display_name', ''),
+                        section_path
+                    )
                     
                     section_stats.append({
                         'name': section.get('display_name', 'Unknown'),
@@ -4927,7 +4888,10 @@ def calculate_section_statistics(analysis_dir):
                                      if os.path.isdir(os.path.join(section_path, d))])
                 
                 # Count test cases for this section
-                test_case_count = count_section_test_cases(section.get('display_name', ''))
+                test_case_count = count_section_test_cases(
+                    section.get('display_name', ''),
+                    section_path
+                )
                 
                 sections.append({
                     'name': section.get('display_name', 'Unknown'),
@@ -4939,18 +4903,33 @@ def calculate_section_statistics(analysis_dir):
     return sections
 
 
-def count_section_test_cases(section_name):
+def count_section_test_cases(section_name, section_path=None):
     """Count test cases for a specific section"""
     test_cases_dir = 'test_cases_output'
     if not os.path.exists(test_cases_dir):
         return 0
     
-    # Find the section folder
     section_folder = None
-    for item in os.listdir(test_cases_dir):
-        if item.endswith(section_name.replace(' ', '_')):
-            section_folder = os.path.join(test_cases_dir, item)
-            break
+
+    # Prefer explicit section path when provided (match by folder name)
+    if section_path:
+        base_name = os.path.basename(section_path.rstrip(os.sep))
+        for item in os.listdir(test_cases_dir):
+            candidate = os.path.join(test_cases_dir, item)
+            if not os.path.isdir(candidate):
+                continue
+            if item == base_name or item.endswith(base_name) or item.split('_', 1)[-1] == base_name:
+                section_folder = candidate
+                break
+
+    # Fallback: attempt to match by display name suffix
+    if not section_folder:
+        suffix = section_name.replace(' ', '_')
+        for item in os.listdir(test_cases_dir):
+            candidate = os.path.join(test_cases_dir, item)
+            if os.path.isdir(candidate) and item.endswith(suffix):
+                section_folder = candidate
+                break
     
     if not section_folder:
         return 0
