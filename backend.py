@@ -3965,6 +3965,14 @@ def get_dashboard_analysis():
         # Get design analysis from OpenAI
         design_analysis = design_analyzer.analyze_design_comprehensive(analysis_for_openai)
         
+        # Get platform distribution
+        platform_distribution = {}
+        for frame in frames_data:
+            platform = frame.get('frame_info', {}).get('platform', 'WEB')
+            platform_distribution[platform] = platform_distribution.get(platform, 0) + 1
+
+        element_counts = summarize_elements(frames_data)
+        
         # Get test case analysis
         test_cases_dir = 'test_cases_output'
         test_case_analysis = {}
@@ -3973,13 +3981,12 @@ def get_dashboard_analysis():
             design_analysis.setdefault('quality_metrics', {})
             design_analysis['quality_metrics']['coverage'] = compute_coverage_from_tests(test_case_analysis)
         
-        # Get platform distribution
-        platform_distribution = {}
-        for frame in frames_data:
-            platform = frame.get('frame_info', {}).get('platform', 'WEB')
-            platform_distribution[platform] = platform_distribution.get(platform, 0) + 1
-
-        element_counts = summarize_elements(frames_data)
+        tester_insights = build_tester_insights(frames_data, element_counts, test_case_analysis, design_analysis.get('quality_metrics', {}))
+        analysis_description = (
+            f"Analyzed {len(frames_data)} frames across {len(index_data.get('sections', []))} sections, "
+            f"generating {test_case_analysis.get('total_test_cases', 0)} test cases with "
+            f"{sum(element_counts.values())} UI elements inventoried."
+        )
         
         # Calculate section statistics
         section_statistics = []
@@ -4012,7 +4019,9 @@ def get_dashboard_analysis():
                 'analysis_time': last_updated
             },
             'element_statistics': element_counts,
-            'last_updated': last_updated
+            'last_updated': last_updated,
+            'tester_insights': tester_insights,
+            'analysis_description': analysis_description
         }
 
         # Attach cloud info if available
@@ -4661,6 +4670,57 @@ def compute_coverage_from_tests(test_case_analysis: Dict) -> Dict:
             coverage[key] = max(20, int((len(categories) / max(1, total)) * 100))
 
     return coverage
+
+def build_tester_insights(frames_data: List[Dict], element_counts: Dict, test_case_analysis: Dict, quality_metrics: Dict) -> List[Dict]:
+    """Build concise, tester-friendly insights from real data."""
+    total_frames = len(frames_data)
+    total_tests = test_case_analysis.get('total_test_cases', 0)
+    sections = test_case_analysis.get('section_distribution', {})
+    coverage = quality_metrics.get('coverage', {})
+
+    top_elements = sorted(element_counts.items(), key=lambda i: i[1], reverse=True)
+    top_text = ', '.join([f"{k.replace('_', ' ')} ({v})" for k, v in top_elements[:3]]) if top_elements else "No elements detected"
+
+    weakest_metric = min(
+        [('accessibility', quality_metrics.get('accessibility', 0)),
+         ('consistency', quality_metrics.get('consistency', 0)),
+         ('usability', quality_metrics.get('usability', 0)),
+         ('error_handling', quality_metrics.get('error_handling', 0))],
+        key=lambda x: x[1]
+    )
+
+    section_hotspots = sorted(sections.items(), key=lambda i: i[1], reverse=True)
+    hotspot_text = section_hotspots[0][0] if section_hotspots else "N/A"
+
+    return [
+        {
+            "title": "Coverage Overview",
+            "description": f"Generated {total_tests} test cases across {total_frames} frames with {len(sections)} sections.",
+            "bullets": [
+                f"Top tested section: {hotspot_text}",
+                f"Element density: {top_text}",
+                f"Coverage mix → Functional: {coverage.get('functional', 0)}%, UX: {coverage.get('ux', 0)}%, Accessibility: {coverage.get('accessibility', 0)}%, Security: {coverage.get('security', 0)}%"
+            ]
+        },
+        {
+            "title": "Risk & Quality Signals",
+            "description": "Prioritize fixes where quality scores are weakest.",
+            "bullets": [
+                f"Weakest area: {weakest_metric[0].replace('_', ' ').title()} at {weakest_metric[1]}%",
+                f"Buttons detected: {element_counts.get('buttons', 0)} • Inputs: {element_counts.get('input_fields', 0)} • Icons: {element_counts.get('icons', 0)}",
+                f"Total components tracked: {sum(element_counts.values())}"
+            ]
+        },
+        {
+            "title": "Data Freshness",
+            "description": "Use latest run artifacts for triage and execution.",
+            "bullets": [
+                "Master test suite and Excel regenerated per run",
+                "Cloud artifacts include analysis, testcases, and Excel exports",
+                "Session ID embedded for traceability"
+            ]
+        }
+    ]
 
 @app.route('/api/dashboard/real-analysis', methods=['GET'])
 def get_real_analysis():

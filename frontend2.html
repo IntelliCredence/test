@@ -65,10 +65,10 @@
             margin-bottom: 2rem;
             padding: 1.5rem;
             background: var(--bg-card);
-            backdrop-filter: blur(10px);
+            backdrop-filter: blur(14px);
             border: 1px solid var(--border-color);
             border-radius: var(--radius-lg);
-            box-shadow: var(--shadow-lg);
+            box-shadow: 0 18px 36px rgba(0,0,0,0.35);
         }
 
         .logo {
@@ -137,11 +137,26 @@
             padding: 1.5rem;
             box-shadow: 0 24px 48px rgba(0,0,0,0.35);
             transition: var(--transition);
+            position: relative;
+            overflow: hidden;
         }
 
         .card:hover {
             border-color: rgba(59, 130, 246, 0.4);
             transform: translateY(-4px);
+        }
+
+        .card::after {
+            content: "";
+            position: absolute;
+            top: -30%;
+            left: -20%;
+            width: 60%;
+            height: 140%;
+            background: linear-gradient(120deg, rgba(255,255,255,0.08), rgba(255,255,255,0));
+            transform: rotate(12deg);
+            pointer-events: none;
+            filter: blur(6px);
         }
 
         /* Form View (Initial) - ALWAYS VISIBLE FIRST */
@@ -988,6 +1003,15 @@
 
             <!-- Overview Tab -->
             <div id="overviewTab" class="tab-content active">
+                <div class="card" style="margin-bottom:1.5rem;">
+                    <h3 class="chart-title">
+                        <i class="fas fa-info-circle"></i>
+                        Analysis Summary
+                    </h3>
+                    <p id="analysisDescription" class="text-tertiary" style="margin-bottom:0.75rem;"></p>
+                    <div id="testerInsights" class="insights-grid"></div>
+                </div>
+
                 <!-- Stats Grid -->
                 <div class="dashboard-grid">
                     <div class="stat-card">
@@ -1689,7 +1713,9 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
 
     elementStatistics: analysis?.elementStatistics || analysis?.element_statistics || {},
     cloudPaths: stats.cloudPaths || analysis?.cloudPaths || {},
-    last_updated: stats.last_updated || analysis?.last_updated || new Date().toISOString()
+    last_updated: stats.last_updated || analysis?.last_updated || new Date().toISOString(),
+    tester_insights: analysis?.tester_insights || [],
+    analysis_description: analysis?.analysis_description || ''
 };
         
         console.log("✅ Dashboard data built:", dashboardData);
@@ -1743,6 +1769,9 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
     
     // Update Design Analysis
     updateRealDesignAnalysis();
+
+    // Analysis summary / insights
+    updateAnalysisSummary();
     
     // Update Platform Distribution
     updateRealPlatformDistribution();
@@ -1955,6 +1984,33 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
     updateList('securityRecommendations', recs.security_recommendations, '🔐');
     updateList('mobileRecommendations', recs.mobile_optimizations, '📱');
 }
+
+    function updateAnalysisSummary() {
+        const descEl = document.getElementById('analysisDescription');
+        const insightsEl = document.getElementById('testerInsights');
+
+        if (descEl) {
+            descEl.textContent = dashboardData.analysis_description || 'Latest analysis details will appear here after a run.';
+        }
+
+        if (insightsEl) {
+            const insights = dashboardData.tester_insights || [];
+            if (insights.length === 0) {
+                insightsEl.innerHTML = '<div class="insight-card">Insights will appear once analysis is available.</div>';
+                return;
+            }
+
+            insightsEl.innerHTML = insights.map(insight => `
+                <div class="insight-card">
+                    <div class="insight-title">${insight.title}</div>
+                    <p class="insight-description">${insight.description}</p>
+                    <ul>
+                        ${(insight.bullets || []).map(b => `<li>${b}</li>`).join('')}
+                    </ul>
+                </div>
+            `).join('');
+        }
+    }
 
 
 
