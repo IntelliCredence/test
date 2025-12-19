@@ -11,10 +11,10 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
-            --bg-primary: #0f172a;
-            --bg-secondary: #1e293b;
-            --bg-tertiary: #334155;
-            --bg-card: rgba(30, 41, 59, 0.7);
+            --bg-primary: #0b1021;
+            --bg-secondary: #11162c;
+            --bg-tertiary: #1b233d;
+            --bg-card: linear-gradient(145deg, rgba(30, 41, 59, 0.82), rgba(17, 24, 39, 0.8));
             --text-primary: #f8fafc;
             --text-secondary: #cbd5e1;
             --text-tertiary: #94a3b8;
@@ -41,7 +41,10 @@
 
         body {
             font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, var(--bg-primary) 0%, #1e1b4b 100%);
+            background: radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.08), transparent 25%),
+                        radial-gradient(circle at 80% 0%, rgba(16, 185, 129, 0.07), transparent 20%),
+                        radial-gradient(circle at 50% 80%, rgba(14, 165, 233, 0.06), transparent 25%),
+                        linear-gradient(135deg, var(--bg-primary) 0%, #0f1530 50%, #060815 100%);
             color: var(--text-primary);
             min-height: 100vh;
             line-height: 1.6;
@@ -128,17 +131,17 @@
         /* Cards */
         .card {
             background: var(--bg-card);
-            backdrop-filter: blur(10px);
-            border: 1px solid var(--border-color);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(148, 163, 184, 0.18);
             border-radius: var(--radius-lg);
             padding: 1.5rem;
-            box-shadow: var(--shadow-lg);
+            box-shadow: 0 24px 48px rgba(0,0,0,0.35);
             transition: var(--transition);
         }
 
         .card:hover {
-            border-color: rgba(59, 130, 246, 0.3);
-            transform: translateY(-2px);
+            border-color: rgba(59, 130, 246, 0.4);
+            transform: translateY(-4px);
         }
 
         /* Form View (Initial) - ALWAYS VISIBLE FIRST */
@@ -1398,7 +1401,7 @@
     let liveUpdateInterval = null;
 
     // Chart instances
-    let testCaseChart, qualityChart, priorityChart, designBalanceChart;
+    let testCaseChart, qualityChart, priorityChart, designBalanceChart, sectionChart, timelineChart, radarChart, coverageChart;
 
     // DOM Elements
     const formView = document.getElementById('formView');
@@ -1982,16 +1985,17 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
         const testCaseCtx = document.getElementById('testCaseChart')?.getContext('2d');
         if (testCaseCtx) {
             testCaseChart = new Chart(testCaseCtx, {
-                type: 'pie',
+                type: 'doughnut',
                 data: {
                     labels: ['Loading real data...'],
                     datasets: [{
                         data: [100],
-                        backgroundColor: ['#3b82f6']
+                        backgroundColor: generateColors(6)
                     }]
                 },
                 options: {
                     responsive: true,
+                    cutout: '55%',
                     plugins: {
                         legend: { position: 'bottom' },
                         title: {
@@ -1999,6 +2003,42 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
                             text: 'Real Test Case Distribution'
                         }
                     }
+                }
+            });
+        }
+
+        // Priority Chart
+        const priorityCtx = document.getElementById('priorityChart')?.getContext('2d');
+        if (priorityCtx) {
+            priorityChart = new Chart(priorityCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Loading...'],
+                    datasets: [{
+                        label: 'Priority',
+                        data: [0],
+                        backgroundColor: generateColors(5)
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+        // Section Test Cases
+        const sectionCtx = document.getElementById('sectionTestChart')?.getContext('2d');
+        if (sectionCtx) {
+            sectionChart = new Chart(sectionCtx, {
+                type: 'bar',
+                data: { labels: ['Loading...'], datasets: [{ label: 'Tests', data: [0], backgroundColor: '#8b5cf6' }] },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
                 }
             });
         }
@@ -2011,12 +2051,13 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
                 data: {
                     labels: ['Loading...'],
                     datasets: [{
-                        label: 'Real Quality Score',
+                        label: 'Quality Score',
                         data: [0],
                         borderColor: '#10b981',
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        backgroundColor: 'rgba(16, 185, 129, 0.15)',
                         fill: true,
-                        tension: 0.4
+                        tension: 0.4,
+                        pointRadius: 4
                     }]
                 },
                 options: {
@@ -2027,50 +2068,176 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
                 }
             });
         }
+
+        // Radar Chart
+        const radarCtx = document.getElementById('radarChart')?.getContext('2d');
+        if (radarCtx) {
+            radarChart = new Chart(radarCtx, {
+                type: 'radar',
+                data: {
+                    labels: ['Accessibility', 'Consistency', 'Usability', 'Error Handling'],
+                    datasets: [{
+                        label: 'Quality Metrics',
+                        data: [0, 0, 0, 0],
+                        backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                        borderColor: '#3b82f6'
+                    }]
+                },
+                options: { responsive: true, scales: { r: { beginAtZero: true, max: 100 } } }
+            });
+        }
+
+        // Coverage Chart
+        const coverageCtx = document.getElementById('coverageChart')?.getContext('2d');
+        if (coverageCtx) {
+            coverageChart = new Chart(coverageCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Functional', 'UX', 'Accessibility', 'Security'],
+                    datasets: [{
+                        label: 'Coverage %',
+                        data: [0, 0, 0, 0],
+                        backgroundColor: generateColors(4)
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: { y: { beginAtZero: true, max: 100 } },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        // Timeline Chart
+        const timelineCtx = document.getElementById('timelineChart')?.getContext('2d');
+        if (timelineCtx) {
+            timelineChart = new Chart(timelineCtx, {
+                type: 'line',
+                data: { labels: ['Waiting for data'], datasets: [{ label: 'Tests', data: [0], borderColor: '#f59e0b', tension: 0.35 }] },
+                options: { responsive: true, scales: { y: { beginAtZero: true } } }
+            });
+        }
+
+        // Design balance
+        const balanceCtx = document.getElementById('designBalanceChart')?.getContext('2d');
+        if (balanceCtx) {
+            designBalanceChart = new Chart(balanceCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Positives', 'Negatives', 'Corrections', 'Improvements'],
+                    datasets: [{ label: 'Count', data: [0, 0, 0, 0], backgroundColor: generateColors(4) }]
+                },
+                options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+            });
+        }
     }
 
     // Update Charts with Real Data
     function updateChartsWithRealData() {
-        const analysis = dashboardData.testCaseAnalysis;
+        const analysis = dashboardData.testCaseAnalysis || {};
         
         // Update Test Case Distribution with REAL data
         if (testCaseChart && analysis.category_distribution) {
             const categories = Object.keys(analysis.category_distribution);
             const counts = Object.values(analysis.category_distribution);
             
-            testCaseChart.data.labels = categories.slice(0, 8);
-            testCaseChart.data.datasets[0].data = counts.slice(0, 8);
-            testCaseChart.data.datasets[0].backgroundColor = generateColors(Math.min(8, categories.length));
+            testCaseChart.data.labels = categories.slice(0, 12);
+            testCaseChart.data.datasets[0].data = counts.slice(0, 12);
+            testCaseChart.data.datasets[0].backgroundColor = generateColors(Math.min(12, categories.length));
             testCaseChart.update();
+        }
+
+        // Priority distribution
+        if (priorityChart && analysis.priority_distribution) {
+            const labels = Object.keys(analysis.priority_distribution);
+            const values = Object.values(analysis.priority_distribution);
+            priorityChart.data.labels = labels;
+            priorityChart.data.datasets[0].data = values;
+            priorityChart.data.datasets[0].backgroundColor = generateColors(labels.length || 4);
+            priorityChart.update();
+        }
+
+        // Section test cases
+        if (sectionChart && analysis.section_distribution) {
+            const labels = Object.keys(analysis.section_distribution);
+            const values = Object.values(analysis.section_distribution);
+            sectionChart.data.labels = labels;
+            sectionChart.data.datasets[0].data = values;
+            sectionChart.update();
         }
         
         // Update Quality Chart with REAL data
         if (qualityChart) {
-    if (dashboardData.sectionStatistics.length > 0) {
-        const sections = dashboardData.sectionStatistics.slice(0, 8).map(s =>
-            s.name?.substring(0, 12) + (s.name?.length > 12 ? '...' : '') || 'Section'
-        );
-        const scores = dashboardData.sectionStatistics.slice(0, 8).map(s => s.quality_score || 0);
+            if (dashboardData.sectionStatistics.length > 0) {
+                const sections = dashboardData.sectionStatistics.slice(0, 8).map(s =>
+                    s.name?.substring(0, 12) + (s.name?.length > 12 ? '...' : '') || 'Section'
+                );
+                const scores = dashboardData.sectionStatistics.slice(0, 8).map(s => s.quality_score || 0);
 
-        qualityChart.data.labels = sections;
-        qualityChart.data.datasets[0].data = scores;
-    } else {
-        // ✅ FALLBACK USING EXISTING QUALITY METRICS (YOU ALREADY HAVE THESE)
-        const qm = dashboardData.qualityMetrics;
+                qualityChart.data.labels = sections;
+                qualityChart.data.datasets[0].data = scores;
+            } else {
+                const qm = dashboardData.qualityMetrics;
+                qualityChart.data.labels = ['Overall Quality'];
+                qualityChart.data.datasets[0].data = [
+                    Math.round(
+                        (qm.accessibility +
+                         qm.consistency +
+                         qm.usability +
+                         qm.error_handling) / 4
+                    )
+                ];
+            }
+            qualityChart.update();
+        }
 
-        qualityChart.data.labels = ['Overall Quality'];
-        qualityChart.data.datasets[0].data = [
-            Math.round(
-                (qm.accessibility +
-                 qm.consistency +
-                 qm.usability +
-                 qm.error_handling) / 4
-            )
-        ];
-    }
+        // Radar chart
+        if (radarChart) {
+            const qm = dashboardData.qualityMetrics || {};
+            radarChart.data.datasets[0].data = [
+                qm.accessibility || 0,
+                qm.consistency || 0,
+                qm.usability || 0,
+                qm.error_handling || 0
+            ];
+            radarChart.update();
+        }
 
-    qualityChart.update();
-}
+        // Coverage chart
+        if (coverageChart) {
+            const coverage = dashboardData.qualityMetrics?.coverage || {};
+            coverageChart.data.datasets[0].data = [
+                coverage.functional || 0,
+                coverage.ux || 0,
+                coverage.accessibility || 0,
+                coverage.security || 0
+            ];
+            coverageChart.update();
+        }
+
+        // Timeline chart: derive from section distribution cumulatively
+        if (timelineChart && analysis.section_distribution) {
+            const labels = Object.keys(analysis.section_distribution);
+            const values = Object.values(analysis.section_distribution);
+            const cumulative = values.reduce((acc, val, idx) => {
+                const prev = idx === 0 ? 0 : acc[idx - 1];
+                acc.push(prev + val);
+                return acc;
+            }, []);
+            timelineChart.data.labels = labels;
+            timelineChart.data.datasets[0].data = cumulative;
+            timelineChart.update();
+        }
+
+        // Design balance
+        if (designBalanceChart) {
+            const pos = dashboardData.designAnalysis?.design_positives?.length || 0;
+            const neg = dashboardData.designAnalysis?.design_negatives?.length || 0;
+            const corr = dashboardData.designAnalysis?.required_corrections?.length || 0;
+            const imp = dashboardData.designAnalysis?.improvement_suggestions?.length || 0;
+            designBalanceChart.data.datasets[0].data = [pos, neg, corr, imp];
+            designBalanceChart.update();
+        }
     }
 
     // Utility Functions
