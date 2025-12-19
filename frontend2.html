@@ -1717,6 +1717,44 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
     tester_insights: analysis?.tester_insights || [],
     analysis_description: analysis?.analysis_description || ''
 };
+
+    const isEmpty = (!analysis || Object.keys(analysis).length === 0) && dashboardData.frames === 0 && dashboardData.testCases === 0;
+    if (isEmpty) {
+        dashboardData.designAnalysis = {
+            design_positives: [],
+            design_negatives: [],
+            required_corrections: [],
+            improvement_suggestions: [],
+            recommendations: {
+                critical_issues: [],
+                ux_improvements: [],
+                security_recommendations: [],
+                mobile_optimizations: []
+            }
+        };
+        dashboardData.qualityMetrics = {
+            accessibility: 0,
+            consistency: 0,
+            usability: 0,
+            error_handling: 0,
+            coverage: {
+                functional: 0,
+                ux: 0,
+                accessibility: 0,
+                security: 0
+            }
+        };
+        dashboardData.testCaseAnalysis = {
+            category_distribution: {},
+            priority_distribution: {},
+            section_distribution: {},
+            section_breakdown: [],
+            total_test_cases: 0
+        };
+        dashboardData.elementStatistics = {};
+        dashboardData.analysis_description = 'No analysis available yet. Run a generation to populate analytics.';
+        dashboardData.tester_insights = [];
+    }
         
         console.log("✅ Dashboard data built:", dashboardData);
         
@@ -1772,6 +1810,17 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
 
     // Analysis summary / insights
     updateAnalysisSummary();
+
+    // Empty-state messaging for analytics
+    const emptyMessage = 'No data available yet. Run a generation to see analytics.';
+    if ((dashboardData.frames || 0) === 0 && (dashboardData.testCases || 0) === 0) {
+        const sectionsContainer = document.getElementById('sectionsContainer');
+        if (sectionsContainer) sectionsContainer.innerHTML = `<div class="section-card">${emptyMessage}</div>`;
+        const elementInventory = document.getElementById('elementInventory');
+        if (elementInventory) elementInventory.innerHTML = `<div class="breakdown-item">${emptyMessage}</div>`;
+        const platformDist = document.getElementById('platformDistribution');
+        if (platformDist) platformDist.innerHTML = `<div class="breakdown-item">${emptyMessage}</div>`;
+    }
     
     // Update Platform Distribution
     updateRealPlatformDistribution();
@@ -1808,7 +1857,7 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
                 `<li>✅ ${item}</li>`
             ).join('');
         } else {
-            positivesList.innerHTML = '<li>Analyzing design positives...</li>';
+            positivesList.innerHTML = '<li>No positives yet. Run a generation.</li>';
         }
         
         // Update negatives with REAL data
@@ -1818,7 +1867,7 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
                 `<li>⚠️ ${item}</li>`
             ).join('');
         } else {
-            negativesList.innerHTML = '<li>No design issues found</li>';
+            negativesList.innerHTML = '<li>No issues yet. Run a generation.</li>';
         }
         
         // Update corrections with REAL data
@@ -2192,33 +2241,50 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
     function updateChartsWithRealData() {
         const analysis = dashboardData.testCaseAnalysis || {};
         
+        const hasData = dashboardData.testCases > 0 || dashboardData.frames > 0;
+
         // Update Test Case Distribution with REAL data
-        if (testCaseChart && analysis.category_distribution) {
-            const categories = Object.keys(analysis.category_distribution);
-            const counts = Object.values(analysis.category_distribution);
-            
-            testCaseChart.data.labels = categories.slice(0, 12);
-            testCaseChart.data.datasets[0].data = counts.slice(0, 12);
-            testCaseChart.data.datasets[0].backgroundColor = generateColors(Math.min(12, categories.length));
+        if (testCaseChart) {
+            if (analysis.category_distribution && hasData) {
+                const categories = Object.keys(analysis.category_distribution);
+                const counts = Object.values(analysis.category_distribution);
+                
+                testCaseChart.data.labels = categories.slice(0, 12);
+                testCaseChart.data.datasets[0].data = counts.slice(0, 12);
+                testCaseChart.data.datasets[0].backgroundColor = generateColors(Math.min(12, categories.length));
+            } else {
+                testCaseChart.data.labels = ['No data'];
+                testCaseChart.data.datasets[0].data = [0];
+            }
             testCaseChart.update();
         }
 
         // Priority distribution
-        if (priorityChart && analysis.priority_distribution) {
-            const labels = Object.keys(analysis.priority_distribution);
-            const values = Object.values(analysis.priority_distribution);
-            priorityChart.data.labels = labels;
-            priorityChart.data.datasets[0].data = values;
-            priorityChart.data.datasets[0].backgroundColor = generateColors(labels.length || 4);
+        if (priorityChart) {
+            if (analysis.priority_distribution && hasData) {
+                const labels = Object.keys(analysis.priority_distribution);
+                const values = Object.values(analysis.priority_distribution);
+                priorityChart.data.labels = labels;
+                priorityChart.data.datasets[0].data = values;
+                priorityChart.data.datasets[0].backgroundColor = generateColors(labels.length || 4);
+            } else {
+                priorityChart.data.labels = ['No data'];
+                priorityChart.data.datasets[0].data = [0];
+            }
             priorityChart.update();
         }
 
         // Section test cases
-        if (sectionChart && analysis.section_distribution) {
-            const labels = Object.keys(analysis.section_distribution);
-            const values = Object.values(analysis.section_distribution);
-            sectionChart.data.labels = labels;
-            sectionChart.data.datasets[0].data = values;
+        if (sectionChart) {
+            if (analysis.section_distribution && hasData) {
+                const labels = Object.keys(analysis.section_distribution);
+                const values = Object.values(analysis.section_distribution);
+                sectionChart.data.labels = labels;
+                sectionChart.data.datasets[0].data = values;
+            } else {
+                sectionChart.data.labels = ['No data'];
+                sectionChart.data.datasets[0].data = [0];
+            }
             sectionChart.update();
         }
         
@@ -2250,47 +2316,60 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
         // Radar chart
         if (radarChart) {
             const qm = dashboardData.qualityMetrics || {};
-            radarChart.data.datasets[0].data = [
-                qm.accessibility || 0,
-                qm.consistency || 0,
-                qm.usability || 0,
-                qm.error_handling || 0
-            ];
+            if (hasData) {
+                radarChart.data.datasets[0].data = [
+                    qm.accessibility || 0,
+                    qm.consistency || 0,
+                    qm.usability || 0,
+                    qm.error_handling || 0
+                ];
+            } else {
+                radarChart.data.datasets[0].data = [0, 0, 0, 0];
+            }
             radarChart.update();
         }
 
         // Coverage chart
         if (coverageChart) {
             const coverage = dashboardData.qualityMetrics?.coverage || {};
-            coverageChart.data.datasets[0].data = [
-                coverage.functional || 0,
-                coverage.ux || 0,
-                coverage.accessibility || 0,
-                coverage.security || 0
-            ];
+            if (hasData) {
+                coverageChart.data.datasets[0].data = [
+                    coverage.functional || 0,
+                    coverage.ux || 0,
+                    coverage.accessibility || 0,
+                    coverage.security || 0
+                ];
+            } else {
+                coverageChart.data.datasets[0].data = [0, 0, 0, 0];
+            }
             coverageChart.update();
         }
 
         // Timeline chart: derive from section distribution cumulatively
-        if (timelineChart && analysis.section_distribution) {
-            const labels = Object.keys(analysis.section_distribution);
-            const values = Object.values(analysis.section_distribution);
-            const cumulative = values.reduce((acc, val, idx) => {
-                const prev = idx === 0 ? 0 : acc[idx - 1];
-                acc.push(prev + val);
-                return acc;
-            }, []);
-            timelineChart.data.labels = labels;
-            timelineChart.data.datasets[0].data = cumulative;
+        if (timelineChart) {
+            if (analysis.section_distribution && hasData) {
+                const labels = Object.keys(analysis.section_distribution);
+                const values = Object.values(analysis.section_distribution);
+                const cumulative = values.reduce((acc, val, idx) => {
+                    const prev = idx === 0 ? 0 : acc[idx - 1];
+                    acc.push(prev + val);
+                    return acc;
+                }, []);
+                timelineChart.data.labels = labels;
+                timelineChart.data.datasets[0].data = cumulative;
+            } else {
+                timelineChart.data.labels = ['No data'];
+                timelineChart.data.datasets[0].data = [0];
+            }
             timelineChart.update();
         }
 
         // Design balance
         if (designBalanceChart) {
-            const pos = dashboardData.designAnalysis?.design_positives?.length || 0;
-            const neg = dashboardData.designAnalysis?.design_negatives?.length || 0;
-            const corr = dashboardData.designAnalysis?.required_corrections?.length || 0;
-            const imp = dashboardData.designAnalysis?.improvement_suggestions?.length || 0;
+            const pos = hasData ? (dashboardData.designAnalysis?.design_positives?.length || 0) : 0;
+            const neg = hasData ? (dashboardData.designAnalysis?.design_negatives?.length || 0) : 0;
+            const corr = hasData ? (dashboardData.designAnalysis?.required_corrections?.length || 0) : 0;
+            const imp = hasData ? (dashboardData.designAnalysis?.improvement_suggestions?.length || 0) : 0;
             designBalanceChart.data.datasets[0].data = [pos, neg, corr, imp];
             designBalanceChart.update();
         }
