@@ -3972,6 +3972,7 @@ def get_dashboard_analysis():
             platform_distribution[platform] = platform_distribution.get(platform, 0) + 1
 
         element_counts = summarize_elements(frames_data)
+        design_analysis['element_statistics'] = element_counts
         
         # Get test case analysis
         test_cases_dir = 'test_cases_output'
