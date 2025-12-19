@@ -1022,6 +1022,20 @@
                         <div class="stat-value" id="dashTime">0s</div>
                         <div class="stat-label">Processing Time</div>
                     </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-hashtag"></i>
+                        </div>
+                        <div class="stat-value" id="dashSession">–</div>
+                        <div class="stat-label">Session ID</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-sync-alt"></i>
+                        </div>
+                        <div class="stat-value" id="dashUpdated">–</div>
+                        <div class="stat-label">Last Updated</div>
+                    </div>
                 </div>
 
                 <!-- Charts Section -->
@@ -1094,6 +1108,15 @@
                         </h3>
                         <div class="breakdown-list" id="platformDistribution">
                             <!-- Platforms will be dynamically added here -->
+                        </div>
+                    </div>
+                    <div class="breakdown-card">
+                        <h3 class="chart-title">
+                            <i class="fas fa-layer-group"></i>
+                            Element Inventory
+                        </h3>
+                        <div class="breakdown-list" id="elementInventory">
+                            <!-- Element stats populated here -->
                         </div>
                     </div>
                 </div>
@@ -1336,11 +1359,11 @@
             </div>
 
             <!-- Downloads Section -->
-            <div class="card mt-2">
-                <h3 class="chart-title">
-                    <i class="fas fa-download"></i>
-                    Download Results
-                </h3>
+                <div class="card mt-2">
+                    <h3 class="chart-title">
+                        <i class="fas fa-download"></i>
+                        Download Results
+                    </h3>
                 <div class="action-buttons">
                     <button class="btn btn-primary" onclick="downloadFile('excel')">
                         <i class="fas fa-file-excel"></i>
@@ -1358,6 +1381,9 @@
                         <i class="fas fa-file-pdf"></i>
                         Generate PDF Report
                     </button>
+                </div>
+                <div class="breakdown-list" id="cloudLinks">
+                    <!-- Cloud links will be injected -->
                 </div>
             </div>
         </div>
@@ -1426,6 +1452,29 @@
             generateBtn.disabled = false;
             generateBtn.innerHTML = '<i class="fas fa-bolt"></i> Generate Test Cases';
         }
+    }
+
+    function renderCloudLinks() {
+        const container = document.getElementById('cloudLinks');
+        if (!container) return;
+
+        const paths = dashboardData.cloudPaths || {};
+        const session = dashboardData.session_id || '';
+
+        if (!session || Object.keys(paths).length === 0) {
+            container.innerHTML = '<div class="breakdown-item">Cloud artifacts will appear after a successful run.</div>';
+            return;
+        }
+
+        container.innerHTML = Object.entries(paths).map(([label, path]) => `
+            <div class="breakdown-item">
+                <div class="breakdown-label">
+                    <i class="fas fa-link"></i>
+                    <span>${label.replace('_', ' ')}</span>
+                </div>
+                <div class="breakdown-value" title="${path}">${path}</div>
+            </div>
+        `).join('');
     }
 
     function startPolling() {
@@ -1568,13 +1617,13 @@
         }
         
         // Step 3: Build comprehensive dashboard data
-        dashboardData = {
+    dashboardData = {
     testCases: stats.testCases || 0,
     frames: stats.frames || 0,
     sections: stats.sections || 0,
     components: stats.components || 0,
     time: stats.time || '0s',
-    session_id: stats.session_id || '',
+    session_id: stats.session_id || analysis?.session_id || '',
 
     analytics: stats.analytics || {
         api_calls: 0,
@@ -1635,7 +1684,9 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
 },
 
 
-    elementStatistics: analysis?.elementStatistics || {}
+    elementStatistics: analysis?.elementStatistics || analysis?.element_statistics || {},
+    cloudPaths: stats.cloudPaths || analysis?.cloudPaths || {},
+    last_updated: stats.last_updated || analysis?.last_updated || new Date().toISOString()
 };
         
         console.log("✅ Dashboard data built:", dashboardData);
@@ -1684,12 +1735,17 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
     updateElement('dashApiCalls', dashboardData.analytics.api_calls || '0');
     updateElement('dashTokens', formatNumber(dashboardData.analytics.tokens_used || 0));
     updateElement('dashAvgTime', dashboardData.analytics.avg_time_per_frame || '0s');
+    updateElement('dashSession', dashboardData.session_id || '—');
+    updateElement('dashUpdated', dashboardData.last_updated || 'Pending');
     
     // Update Design Analysis
     updateRealDesignAnalysis();
     
     // Update Platform Distribution
     updateRealPlatformDistribution();
+
+    // Update Element Inventory
+    updateElementInventory();
     
     // Update Sections
     updateRealSections();
@@ -1702,6 +1758,9 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
     
     // Update Test Case Breakdown
     updateRealTestCaseBreakdown();
+
+    // Update Cloud Artifacts
+    renderCloudLinks();
     
     console.log("✅ Dashboard UI updated successfully");
 }
@@ -1768,6 +1827,27 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
             `).join('');
         } else {
             container.innerHTML = '<div class="breakdown-item">Platform analysis in progress...</div>';
+        }
+    }
+
+    function updateElementInventory() {
+        const inventory = dashboardData.element_statistics || dashboardData.elementStatistics || {};
+        const container = document.getElementById('elementInventory');
+
+        if (!container) return;
+
+        if (inventory && Object.keys(inventory).length > 0) {
+            container.innerHTML = Object.entries(inventory).map(([key, value]) => `
+                <div class="breakdown-item">
+                    <div class="breakdown-label">
+                        <i class="fas fa-cube"></i>
+                        <span>${key.replace(/_/g, ' ')}</span>
+                    </div>
+                    <div class="breakdown-value">${formatNumber(value)}</div>
+                </div>
+            `).join('');
+        } else {
+            container.innerHTML = '<div class="breakdown-item">Element statistics pending...</div>';
         }
     }
 

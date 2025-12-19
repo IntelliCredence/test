@@ -3951,25 +3951,14 @@ def get_dashboard_analysis():
         if not os.path.exists(index_file):
             return jsonify({'error': 'Analysis index not found'}), 404
         
-        with open(index_file, 'r', encoding='utf-8') as f:
-            analysis_data = json.load(f)
-        
-        # Load all frame analyses
-        frames_data = []
-        for section in analysis_data.get('sections', []):
-            section_path = os.path.join(analysis_dir, section['path'])
-            if os.path.exists(section_path):
-                for item in os.listdir(section_path):
-                    if os.path.isdir(os.path.join(section_path, item)):
-                        analysis_file = os.path.join(section_path, item, 'analysis.json')
-                        if os.path.exists(analysis_file):
-                            with open(analysis_file, 'r', encoding='utf-8') as f:
-                                frame_data = json.load(f)
-                                frames_data.append(frame_data)
+        index_data, frames_data = load_analysis_frames(analysis_dir)
+        if not index_data:
+            with open(index_file, 'r', encoding='utf-8') as f:
+                index_data = json.load(f)
         
         # Prepare analysis data for OpenAI
         analysis_for_openai = {
-            'metadata': analysis_data.get('metadata', {}),
+            'metadata': index_data.get('metadata', {}),
             'frames': frames_data
         }
         
@@ -3987,10 +3976,12 @@ def get_dashboard_analysis():
         for frame in frames_data:
             platform = frame.get('frame_info', {}).get('platform', 'WEB')
             platform_distribution[platform] = platform_distribution.get(platform, 0) + 1
+
+        element_counts = summarize_elements(frames_data)
         
         # Calculate section statistics
         section_statistics = []
-        for section in analysis_data.get('sections', []):
+        for section in index_data.get('sections', []):
             section_path = os.path.join(analysis_dir, section['path'])
             if os.path.exists(section_path):
                 frames = [d for d in os.listdir(section_path) 
@@ -3999,10 +3990,12 @@ def get_dashboard_analysis():
                 section_statistics.append({
                     'name': section.get('display_name', section.get('key')),
                     'frames': len(frames),
-                    'test_cases': 0,  # Will be calculated from test case analysis
-                    'quality_score': random.randint(70, 95)  # Placeholder
+                    'test_cases': count_section_test_cases(section.get('display_name', ''), section_path),
+                    'quality_score': calculate_section_quality(section_path)
                 })
         
+        last_updated = index_data.get('metadata', {}).get('analysis_date', time.strftime('%Y-%m-%d %H:%M:%S'))
+
         # Combine all data
         response = {
             'design_analysis': design_analysis,
@@ -4013,10 +4006,17 @@ def get_dashboard_analysis():
                 'total_frames': len(frames_data),
                 'total_sections': len(section_statistics),
                 'total_test_cases': test_case_analysis.get('total_test_cases', 0),
-                'total_components': sum(design_analysis.get('element_statistics', {}).values()),
-                'analysis_time': time.strftime('%Y-%m-%d %H:%M:%S')
-            }
+                'total_components': sum(design_analysis.get('element_statistics', {}).values()) or sum(element_counts.values()),
+                'analysis_time': last_updated
+            },
+            'element_statistics': element_counts,
+            'last_updated': last_updated
         }
+
+        # Attach cloud info if available
+        if generation_status.get('results'):
+            response['session_id'] = generation_status['results'].get('session_id')
+            response['cloudPaths'] = generation_status['results'].get('cloudPaths', {})
         
         return jsonify(response)
         
@@ -4042,7 +4042,9 @@ def get_dashboard_stats():
                 'components': results.get('components', 0),
                 'time': results.get('time', '0s'),
                 'analytics': results.get('analytics', {}),
-                'session_id': results.get('session_id', '')
+                'session_id': results.get('session_id', ''),
+                'cloudPaths': results.get('cloudPaths', {}),
+                'last_updated': time.strftime('%Y-%m-%d %H:%M:%S')
             })
         
         # Try to calculate from files
@@ -4367,7 +4369,9 @@ def get_real_stats():
             'components': 0,
             'time': '0s',
             'analytics': {},
-            'session_id': ''
+            'session_id': '',
+            'cloudPaths': {},
+            'last_updated': None
         }
         
         # First, try to get from generation_status (most recent run)
@@ -4380,7 +4384,9 @@ def get_real_stats():
                 'components': results.get('components', 0),
                 'time': results.get('time', '0s'),
                 'analytics': results.get('analytics', {}),
-                'session_id': results.get('session_id', '')
+                'session_id': results.get('session_id', ''),
+                'cloudPaths': results.get('cloudPaths', {}),
+                'last_updated': time.strftime('%Y-%m-%d %H:%M:%S')
             })
             return jsonify(stats)
         
@@ -4409,36 +4415,24 @@ def get_real_stats():
         # Count frames and sections
         analysis_dir = 'analysis_output'
         if os.path.exists(analysis_dir):
-            index_file = os.path.join(analysis_dir, 'index.json')
-            if os.path.exists(index_file):
-                try:
-                    with open(index_file, 'r', encoding='utf-8') as f:
-                        index_data = json.load(f)
-                        stats['frames'] = index_data.get('metadata', {}).get('total_frames', 0)
-                        stats['sections'] = len(index_data.get('sections', []))
-                        print(f"Found {stats['frames']} frames, {stats['sections']} sections")
-                except Exception as e:
-                    print(f"Error reading index: {e}")
-            
-            # Count components
-            total_components = 0
-            for root, dirs, files in os.walk(analysis_dir):
-                for file in files:
-                    if file == 'analysis.json':
-                        file_path = os.path.join(root, file)
-                        try:
-                            with open(file_path, 'r', encoding='utf-8') as f:
-                                frame_data = json.load(f)
-                                analysis = frame_data.get('analysis', {})
-                                # Count UI components
-                                total_components += len(analysis.get('buttons', []))
-                                total_components += len(analysis.get('input_fields', []))
-                                total_components += len(analysis.get('icons', []))
-                                total_components += len(analysis.get('links', []))
-                        except Exception as e:
-                            print(f"Error reading analysis: {e}")
-            stats['components'] = total_components
-            print(f"Found {total_components} components")
+            index_data, frames_data = load_analysis_frames(analysis_dir)
+
+            # Frames/sections
+            stats['frames'] = index_data.get('metadata', {}).get('total_frames', len(frames_data))
+            stats['sections'] = len(index_data.get('sections', []))
+
+            # Components and element counts
+            element_counts = summarize_elements(frames_data)
+            stats['components'] = (
+                element_counts['buttons'] +
+                element_counts['input_fields'] +
+                element_counts['icons'] +
+                element_counts['links']
+            )
+            stats['last_updated'] = time.strftime('%Y-%m-%d %H:%M:%S')
+
+            print(f"Found {stats['frames']} frames, {stats['sections']} sections")
+            print(f"Found {stats['components']} components")
         
         # Get analytics from generation status
         if generation_status.get('analytics'):
@@ -4587,6 +4581,54 @@ def calculate_quality_metrics_from_data(frames_data, element_counts):
     
     return metrics
 
+def load_analysis_frames(analysis_dir: str):
+    """Load index metadata and all frame analyses from disk."""
+    frames_data = []
+    index_data = {}
+
+    index_file = os.path.join(analysis_dir, 'index.json')
+    if os.path.exists(index_file):
+        with open(index_file, 'r', encoding='utf-8') as f:
+            index_data = json.load(f)
+
+    for root, dirs, files in os.walk(analysis_dir):
+        for file in files:
+            if file == 'analysis.json':
+                file_path = os.path.join(root, file)
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        frame_data = json.load(f)
+                        frames_data.append(frame_data)
+                except Exception as e:
+                    print(f"Error reading {file_path}: {e}")
+                    continue
+
+    return index_data, frames_data
+
+def summarize_elements(frames_data: List[Dict]) -> Dict:
+    """Aggregate element statistics from frames."""
+    element_counts = {
+        'buttons': 0,
+        'input_fields': 0,
+        'icons': 0,
+        'links': 0,
+        'headings': 0,
+        'text_elements': 0,
+        'containers': 0
+    }
+
+    for frame in frames_data:
+        analysis = frame.get('analysis', {})
+        element_counts['buttons'] += len(analysis.get('buttons', []))
+        element_counts['input_fields'] += len(analysis.get('input_fields', []))
+        element_counts['icons'] += len(analysis.get('icons', []))
+        element_counts['links'] += len(analysis.get('links', []))
+        element_counts['headings'] += len(analysis.get('headings_and_titles', []))
+        element_counts['text_elements'] += len(analysis.get('body_text', []))
+        element_counts['containers'] += len(analysis.get('containers_cards', []))
+
+    return element_counts
+
 @app.route('/api/dashboard/real-analysis', methods=['GET'])
 def get_real_analysis():
     """Fixed real design analysis with accurate data extraction"""
@@ -4599,49 +4641,16 @@ def get_real_analysis():
         print("📊 Loading Real Design Analysis")
         print("="*60)
         
-        # Load all frame analyses
-        frames_data = []
+        index_data, frames_data = load_analysis_frames(analysis_dir)
+
+        # Platform distribution
         platform_distribution = {}
-        element_counts = {
-            'buttons': 0,
-            'input_fields': 0,
-            'icons': 0,
-            'links': 0,
-            'headings': 0,
-            'text_elements': 0
-        }
-        
-        # Find all analysis.json files
-        analysis_files = []
-        for root, dirs, files in os.walk(analysis_dir):
-            for file in files:
-                if file == 'analysis.json':
-                    analysis_files.append(os.path.join(root, file))
-        
-        print(f"Found {len(analysis_files)} analysis files")
-        
-        for file_path in analysis_files:
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    frame_data = json.load(f)
-                    frames_data.append(frame_data)
-                    
-                    # Extract platform
-                    frame_info = frame_data.get('frame_info', {})
-                    platform = frame_info.get('platform', 'WEB')
-                    platform_distribution[platform] = platform_distribution.get(platform, 0) + 1
-                    
-                    # Count elements
-                    analysis = frame_data.get('analysis', {})
-                    element_counts['buttons'] += len(analysis.get('buttons', []))
-                    element_counts['input_fields'] += len(analysis.get('input_fields', []))
-                    element_counts['icons'] += len(analysis.get('icons', []))
-                    element_counts['links'] += len(analysis.get('links', []))
-                    element_counts['headings'] += len(analysis.get('headings_and_titles', []))
-                    element_counts['text_elements'] += len(analysis.get('body_text', []))
-                    
-            except Exception as e:
-                print(f"Error reading {file_path}: {e}")
+        for frame in frames_data:
+            frame_info = frame.get('frame_info', {})
+            platform = frame_info.get('platform', 'WEB')
+            platform_distribution[platform] = platform_distribution.get(platform, 0) + 1
+
+        element_counts = summarize_elements(frames_data)
         
         print(f"Loaded {len(frames_data)} frames")
         print(f"Platform distribution: {platform_distribution}")
@@ -4656,27 +4665,29 @@ def get_real_analysis():
         # Get section statistics
         section_stats = []
         index_file = os.path.join(analysis_dir, 'index.json')
-        if os.path.exists(index_file):
-            with open(index_file, 'r', encoding='utf-8') as f:
-                index_data = json.load(f)
-                for section in index_data.get('sections', []):
-                    section_path = os.path.join(analysis_dir, section['path'])
-                    frame_count = 0
-                    if os.path.exists(section_path):
-                        frame_count = len([d for d in os.listdir(section_path) 
-                                         if os.path.isdir(os.path.join(section_path, d))])
-                    
-                    test_case_count = count_section_test_cases(
-                        section.get('display_name', ''),
-                        section_path
-                    )
-                    
-                    section_stats.append({
-                        'name': section.get('display_name', 'Unknown'),
-                        'frames': frame_count,
-                        'test_cases': test_case_count,
-                        'quality_score': calculate_section_quality(section_path)
-                    })
+        if index_data or os.path.exists(index_file):
+            if not index_data and os.path.exists(index_file):
+                with open(index_file, 'r', encoding='utf-8') as f:
+                    index_data = json.load(f)
+
+            for section in index_data.get('sections', []):
+                section_path = os.path.join(analysis_dir, section['path'])
+                frame_count = 0
+                if os.path.exists(section_path):
+                    frame_count = len([d for d in os.listdir(section_path) 
+                                     if os.path.isdir(os.path.join(section_path, d))])
+                
+                test_case_count = count_section_test_cases(
+                    section.get('display_name', ''),
+                    section_path
+                )
+                
+                section_stats.append({
+                    'name': section.get('display_name', 'Unknown'),
+                    'frames': frame_count,
+                    'test_cases': test_case_count,
+                    'quality_score': calculate_section_quality(section_path)
+                })
         
         # Get test case analysis
         test_case_analysis = analyze_real_test_cases()
@@ -4687,8 +4698,13 @@ def get_real_analysis():
             'sectionStatistics': section_stats,
             'qualityMetrics': quality_metrics,
             'testCaseAnalysis': test_case_analysis,
-            'elementStatistics': element_counts
+            'elementStatistics': element_counts,
+            'element_statistics': element_counts  # backward compatibility
         }
+
+        if generation_status.get('results'):
+            response['session_id'] = generation_status['results'].get('session_id')
+            response['cloudPaths'] = generation_status['results'].get('cloudPaths', {})
         
         print("✅ Analysis complete")
         print("="*60 + "\n")
@@ -4995,14 +5011,15 @@ def analyze_real_test_cases():
                     content = f.read()
                     
                     # Extract section from path
-                    section = os.path.basename(os.path.dirname(root))
-                    sections[section] += 1
+                    rel_path = os.path.relpath(root, test_cases_dir)
+                    section = rel_path.split(os.sep)[0] if rel_path else 'root'
                     
                     # Find all test cases in file
                     test_case_blocks = re.split(r'\*\*Test Case ID\*\*:', content)
                     
                     for block in test_case_blocks[1:]:  # Skip first empty block
                         total_cases += 1
+                        sections[section] += 1
                         
                         # Extract category
                         category_match = re.search(r'\*\*Category\*\*:\s*(.+)', block)
