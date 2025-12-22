@@ -1626,6 +1626,9 @@
             throw new Error('Failed to load statistics');
         }
         const stats = await statsResponse.json();
+        if (stats.error) {
+            throw new Error(stats.error);
+        }
         
         console.log("✅ Stats loaded:", stats);
         
@@ -1635,6 +1638,10 @@
             const analysisResponse = await fetch('/api/dashboard/real-analysis');
             if (analysisResponse.ok) {
                 analysis = await analysisResponse.json();
+                if (analysis.error) {
+                    console.warn("⚠️ Analysis endpoint returned an error:", analysis.error);
+                    analysis = null;
+                }
                 console.log("✅ Analysis loaded:", analysis);
             } else {
                 console.warn("⚠️ Analysis not ready, will use stats only");
@@ -1644,12 +1651,14 @@
         }
         
         // Step 3: Build comprehensive dashboard data
+    const resolvedLastUpdated = stats.last_updated || analysis?.last_updated || new Date().toISOString();
+
     dashboardData = {
-    testCases: stats.testCases || 0,
-    frames: stats.frames || 0,
-    sections: stats.sections || 0,
-    components: stats.components || 0,
-    time: stats.time || '0s',
+    testCases: Number(stats.testCases) || 0,
+    frames: Number(stats.frames) || 0,
+    sections: Number(stats.sections) || 0,
+    components: Number(stats.components) || 0,
+    time: stats.time || (stats.analytics?.elapsed_time ? `${Math.round(stats.analytics.elapsed_time)}s` : '0s'),
     session_id: stats.session_id || analysis?.session_id || '',
 
     analytics: stats.analytics || {
@@ -1713,7 +1722,7 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
 
     elementStatistics: analysis?.elementStatistics || analysis?.element_statistics || {},
     cloudPaths: stats.cloudPaths || analysis?.cloudPaths || {},
-    last_updated: stats.last_updated || analysis?.last_updated || new Date().toISOString(),
+    last_updated: resolvedLastUpdated,
     tester_insights: analysis?.tester_insights || [],
     analysis_description: analysis?.analysis_description || ''
 };

@@ -18,9 +18,11 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import re
 from datetime import datetime, timedelta
 
+
 import glob
 
-OPENAI_API_KEY = ""
+# Use environment-provided OpenAI key by default so analysis works without manual edits
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
 
@@ -2832,7 +2834,11 @@ def run_generation_enhanced(figma_token, file_key, scale, project_name):
         
         add_log('🔐 Validating API credentials...', 'info')
         update_status_with_logs(10, 'Validation', 'Validating Figma and OpenAI credentials')
-        analyzer = EnhancedFigmaTestCaseGenerator(figma_token, OPENAI_API_KEY)
+        openai_key = os.environ.get("OPENAI_API_KEY", OPENAI_API_KEY)
+        if not openai_key:
+            raise RuntimeError("OpenAI API key is not configured. Set OPENAI_API_KEY in the environment.")
+
+        analyzer = EnhancedFigmaTestCaseGenerator(figma_token, openai_key)
         add_log('✅ API credentials validated successfully', 'success')
         
         add_log('🌐 Connecting to Figma API...', 'info')
@@ -3398,7 +3404,7 @@ def generate():
     
     # Start generation in background thread
     thread = threading.Thread(
-        target=run_generation_enhanced,
+        target=run_generation_enhanced_with_dashboard,
         args=(figma_token, file_key, scale, project_name)
     )
     thread.daemon = True
@@ -3933,7 +3939,7 @@ class TestCaseAnalyzer:
 
 
 # Initialize analyzers
-design_analyzer = DesignAnalyzer(OPENAI_API_KEY)
+design_analyzer = DesignAnalyzer(os.environ.get("OPENAI_API_KEY", OPENAI_API_KEY))
 testcase_analyzer = TestCaseAnalyzer()
 
 
@@ -4428,20 +4434,18 @@ def get_real_stats():
         analysis_dir = 'analysis_output'
         if os.path.exists(analysis_dir):
             index_data, frames_data = load_analysis_frames(analysis_dir)
+            analysis_meta = index_data.get('metadata', {})
 
             # Frames/sections
-            stats['frames'] = index_data.get('metadata', {}).get('total_frames', len(frames_data))
+            stats['frames'] = analysis_meta.get('total_frames', len(frames_data))
             stats['sections'] = len(index_data.get('sections', []))
+            stats['last_updated'] = analysis_meta.get('analysis_date', stats['last_updated'])
 
             # Components and element counts
             element_counts = summarize_elements(frames_data)
-            stats['components'] = (
-                element_counts['buttons'] +
-                element_counts['input_fields'] +
-                element_counts['icons'] +
-                element_counts['links']
-            )
-            stats['last_updated'] = time.strftime('%Y-%m-%d %H:%M:%S')
+            stats['components'] = sum(element_counts.values())
+            if not stats['last_updated']:
+                stats['last_updated'] = time.strftime('%Y-%m-%d %H:%M:%S')
 
             print(f"Found {stats['frames']} frames, {stats['sections']} sections")
             print(f"Found {stats['components']} components")
@@ -4457,6 +4461,14 @@ def get_real_stats():
             elapsed = generation_status['analytics'].get('elapsed_time', 0)
             if elapsed > 0:
                 stats['time'] = format_time(elapsed)
+                if stats['frames']:
+                    stats['analytics']['avg_time_per_frame'] = stats['analytics'].get(
+                        'avg_time_per_frame',
+                        format_time(elapsed / max(1, stats['frames']))
+                    )
+
+        if not stats['last_updated']:
+            stats['last_updated'] = time.strftime('%Y-%m-%d %H:%M:%S')
         
         print(f"Final stats: {stats}")
         return jsonify(stats)
