@@ -4414,21 +4414,9 @@ def get_real_stats():
         # Count test cases
         test_cases_dir = 'test_cases_output'
         if os.path.exists(test_cases_dir):
-            total_test_cases = 0
-            for root, dirs, files in os.walk(test_cases_dir):
-                for file in files:
-                    if file.endswith('.md') and not file.startswith('00_'):
-                        file_path = os.path.join(root, file)
-                        try:
-                            with open(file_path, 'r', encoding='utf-8') as f:
-                                content = f.read()
-                                # Count test case IDs
-                                test_cases = len(re.findall(r'\*\*Test Case ID\*\*:', content))
-                                total_test_cases += test_cases
-                        except Exception as e:
-                            print(f"Error reading {file}: {e}")
-            stats['testCases'] = total_test_cases
-            print(f"Found {total_test_cases} test cases")
+            parsed_cases = load_test_cases_with_parser(test_cases_dir)
+            stats['testCases'] = len(parsed_cases)
+            print(f"Found {stats['testCases']} test cases")
         
         # Count frames and sections
         analysis_dir = 'analysis_output'
@@ -4652,6 +4640,19 @@ def summarize_elements(frames_data: List[Dict]) -> Dict:
         element_counts['containers'] += len(analysis.get('containers_cards', []))
 
     return element_counts
+
+def load_test_cases_with_parser(test_cases_dir: str = 'test_cases_output') -> List[Dict]:
+    """Parse test cases using the same logic as Excel generation for consistency."""
+    try:
+        if not os.path.exists(test_cases_dir):
+            return []
+
+        safe_key = os.environ.get("OPENAI_API_KEY", OPENAI_API_KEY) or "dummy-key"
+        parser = EnhancedFigmaTestCaseGenerator("", safe_key)
+        return parser.consolidate_test_cases_from_directory(test_cases_dir)
+    except Exception as e:
+        print(f"Error parsing test cases with parser: {e}")
+        return []
 
 def compute_coverage_from_tests(test_case_analysis: Dict) -> Dict:
     """Create lightweight coverage metrics from available test data."""
@@ -5094,7 +5095,7 @@ def calculate_section_quality(section_path):
 
 
 def analyze_real_test_cases(index_data=None):
-    """Analyze real test cases from generated files with section mapping"""
+    """Analyze real test cases from generated files with section mapping using parsed data"""
     test_cases_dir = 'test_cases_output'
     if not os.path.exists(test_cases_dir):
         return {
@@ -5104,64 +5105,38 @@ def analyze_real_test_cases(index_data=None):
             'section_breakdown': [],
             'total_test_cases': 0
         }
-    
-    # Map folder names to display names from index data
-    section_map = {}
-    if index_data:
-        for section in index_data.get('sections', []):
-            folder = section.get('path')
-            display = section.get('display_name', section.get('key', folder))
-            if folder:
-                section_map[folder] = display
-    
+
+    parsed_cases = load_test_cases_with_parser(test_cases_dir)
+    if not parsed_cases:
+        return {
+            'category_distribution': {},
+            'priority_distribution': {},
+            'section_distribution': {},
+            'section_breakdown': [],
+            'total_test_cases': 0
+        }
+
     categories = defaultdict(int)
     priorities = defaultdict(int)
     sections = defaultdict(int)
-    total_cases = 0
-    
-    # Parse all test case files
-    for root, dirs, files in os.walk(test_cases_dir):
-        for file in files:
-            if file.endswith('.md') and not file.startswith('00_'):
-                file_path = os.path.join(root, file)
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    
-                    # Extract section from path
-                    rel_path = os.path.relpath(root, test_cases_dir)
-                    section_folder = rel_path.split(os.sep)[0] if rel_path else 'root'
-                    section_name = section_map.get(section_folder, section_folder)
-                    
-                    # Find all test cases in file
-                    test_case_blocks = re.split(r'\*\*Test Case ID\*\*:', content)
-                    
-                    for block in test_case_blocks[1:]:  # Skip first empty block
-                        total_cases += 1
-                        sections[section_name] += 1
-                        
-                        # Extract category
-                        category_match = re.search(r'\*\*Category\*\*:\s*(.+)', block)
-                        if category_match:
-                            category = category_match.group(1).strip()
-                            categories[category] += 1
-                        
-                        # Extract priority
-                        priority_match = re.search(r'\*\*Priority\*\*:\s*(.+)', block, re.IGNORECASE)
-                        if priority_match:
-                            priority = priority_match.group(1).strip()
-                            priorities[priority] += 1
-    
+
+    for tc in parsed_cases:
+        categories[tc.get('category', 'General')] += 1
+        priorities[tc.get('priority', 'Medium')] += 1
+        section_name = tc.get('section', 'Unknown')
+        sections[section_name] += 1
+
     section_breakdown = [
         {'section': name, 'test_cases': count}
         for name, count in sorted(sections.items(), key=lambda i: i[0])
     ]
-    
+
     return {
         'category_distribution': dict(categories),
         'priority_distribution': dict(priorities),
         'section_distribution': dict(sections),
         'section_breakdown': section_breakdown,
-        'total_test_cases': total_cases
+        'total_test_cases': len(parsed_cases)
     }
 
 
