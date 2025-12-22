@@ -4641,15 +4641,71 @@ def summarize_elements(frames_data: List[Dict]) -> Dict:
 
     return element_counts
 
+def list_test_case_files(test_cases_dir: str = 'test_cases_output') -> List[str]:
+    """Return all markdown files that may contain test cases (directory + master files)."""
+    files = []
+
+    if os.path.exists(test_cases_dir):
+        for root, _, filenames in os.walk(test_cases_dir):
+            for name in filenames:
+                if not name.endswith('.md'):
+                    continue
+                files.append(os.path.join(root, name))
+
+    # Also consider legacy/master exports at repo root
+    for candidate in ['comprehensive_test_cases.md', '00_MASTER_TEST_SUITE.md']:
+        if os.path.exists(candidate):
+            files.append(candidate)
+
+    return files
+
+
 def load_test_cases_with_parser(test_cases_dir: str = 'test_cases_output') -> List[Dict]:
     """Parse test cases using the same logic as Excel generation for consistency."""
     try:
-        if not os.path.exists(test_cases_dir):
+        files = list_test_case_files(test_cases_dir)
+        if not files:
             return []
 
         safe_key = os.environ.get("OPENAI_API_KEY", OPENAI_API_KEY) or "dummy-key"
         parser = EnhancedFigmaTestCaseGenerator("", safe_key)
-        return parser.consolidate_test_cases_from_directory(test_cases_dir)
+
+        all_cases: List[Dict] = []
+        seen_keys = set()
+        for path in files:
+            try:
+                parsed = parser.parse_test_cases_from_markdown(path)
+                if parsed:
+                    for tc in parsed:
+                        key = (tc.get('tc_id'), tc.get('section'), tc.get('frame'))
+                        if key in seen_keys:
+                            continue
+                        seen_keys.add(key)
+                        all_cases.append(tc)
+                    continue
+            except Exception as parse_error:
+                print(f"Error parsing {path}: {parse_error}")
+
+            # Fallback regex counting to avoid silent under-counts
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                for match in re.finditer(r'\*\*Test Case ID\*\*:\s*([^\n]+)', content):
+                    key = (match.group(1).strip(), 'Unknown', 'Unknown')
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+                    all_cases.append({
+                        'section': 'Unknown',
+                        'frame': 'Unknown',
+                        'tc_id': match.group(1).strip(),
+                        'category': 'General',
+                        'priority': 'Medium'
+                    })
+            except Exception as regex_error:
+                print(f"Regex fallback failed for {path}: {regex_error}")
+
+        return all_cases
     except Exception as e:
         print(f"Error parsing test cases with parser: {e}")
         return []
@@ -5096,17 +5152,7 @@ def calculate_section_quality(section_path):
 
 def analyze_real_test_cases(index_data=None):
     """Analyze real test cases from generated files with section mapping using parsed data"""
-    test_cases_dir = 'test_cases_output'
-    if not os.path.exists(test_cases_dir):
-        return {
-            'category_distribution': {},
-            'priority_distribution': {},
-            'section_distribution': {},
-            'section_breakdown': [],
-            'total_test_cases': 0
-        }
-
-    parsed_cases = load_test_cases_with_parser(test_cases_dir)
+    parsed_cases = load_test_cases_with_parser('test_cases_output')
     if not parsed_cases:
         return {
             'category_distribution': {},
