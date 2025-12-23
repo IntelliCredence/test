@@ -585,35 +585,35 @@ class EnhancedFigmaTestCaseGenerator:
         """
         FIXED: Generate focused test cases (2-4 per element, not 15+)
         """
-        prompt = f"""Generate FOCUSED manual test cases for this UI category.
+        prompt = f"""You are a senior QA engineer creating ONLY the necessary manual test cases for any digital product (web, mobile, tablet, kiosk).
 
-    **Frame**: {chunk['frame_name']}
-    **Category**: {chunk['category']}
+    Scope for this chunk:
+    - Frame: {chunk['frame_name']}
+    - Category: {chunk['category']}
 
-    CRITICAL RULES:
-    1. Generate ONLY 2-4 test cases per unique element
-    2. Skip empty categories entirely
-    3. Combine related tests (don't create separate tests for color, size, position)
-    4. One comprehensive test is better than 10 granular ones
+    Universal generation rules:
+    1) Produce lean, high-value coverage: 2–4 tests per unique element or interaction maximum.
+    2) Skip empty or duplicated signals. Do not invent elements that are not in the analysis JSON.
+    3) Merge trivial checks (color/size/position/text) into a single functional + visual test.
+    4) Always include at least one accessibility or error-handling expectation when applicable.
+    5) Prefer scenario-based tests over atomic variations; avoid redundant permutations.
 
-    Example for a button:
-    - Test 1: Verify button appearance and functionality
-    - Test 2: Verify button states (hover, click, disabled)
-    - Test 3: Verify button accessibility
+    Example (button):
+    - Test: Verify button renders, label text matches design, and primary click triggers the intended action.
+    - Test: Verify hover/active/disabled states and focus ring are visible and accessible.
+    - Test: Verify keyboard and screen-reader accessibility (role, name, focus order).
 
-    DO NOT CREATE:
-    - Separate tests for "button color"
-    - Separate tests for "button text"
-    - Separate tests for "button position"
-    - Separate tests for "button size"
-    → Combine these into ONE test!
+    Forbidden:
+    - Long lists of cosmetic-only cases.
+    - Separate tests for every minor style attribute.
+    - Generic boilerplate steps that do not reference real data.
 
-    Analysis Data:
+    Analysis Data (authoritative source):
     ```json
     {json.dumps(chunk['data'], indent=2)}
     ```
 
-    Generate 2-4 FOCUSED test cases maximum per element."""
+    Output concise, scenario-based test cases that are strictly necessary and nothing more."""
 
         try:
             response = self.openai_client.chat.completions.create(
@@ -2257,63 +2257,44 @@ class EnhancedFigmaTestCaseGenerator:
         """
         Generate test cases for a specific chunk of analysis.
         """
-        prompt = f"""You are generating test cases for a UI design. This is chunk {chunk_number} of {total_chunks}.
+        prompt = f"""You are creating UNIVERSAL, minimal-but-sufficient manual test cases for a UI design (any platform).
+This is chunk {chunk_number} of {total_chunks}.
 
-**Frame**: {chunk['frame_name']}
-**Category**: {chunk['category']}
+Context:
+- Frame: {chunk['frame_name']}
+- Category: {chunk['category']}
 
-Generate 30-50 comprehensive manual test cases for the elements in this category.
+Generation objectives:
+1) Produce only the essential scenarios (generally 3–8 per category, not dozens).
+2) Tie every step and expectation to concrete facts from the analysis JSON—never invent UI.
+3) Prioritize behavior, validation, and accessibility over cosmetic minutiae.
+4) Cover positive, negative, and boundary cases when relevant, but avoid redundant variants.
+5) Combine related visual checks with functional outcomes to keep the suite lean.
 
-REQUIREMENTS:
-1. Use EXACT text content from the analysis
-2. Reference ACTUAL visual elements that exist
-3. Be SPECIFIC with expected results (exact colors, text, positions)
-4. Include positive, negative, boundary cases
-5. Test visual appearance, functionality, validation, accessibility
-
-Generate test cases in this format:
-
-## {chunk['category'].upper()} TEST CASES
-
-### Test Case Template
-For each element, generate appropriate test cases covering:
-- Visual presence and styling
-- Text content verification
-- Position and layout
-- Interactive behavior
-- States (normal, hover, focus, error)
-- Validation (for inputs)
-- Accessibility
-
----
-
+Format:
 **Test Case ID**: {chunk['chunk_id'].upper()}-001  
-**Title**: [Specific test title]  
-**Description**: [What this test verifies]  
-**Preconditions**: User is on the page  
-**Test Data**: [Any required data]  
+**Title**: [Specific, outcome-focused]  
+**Description**: [What the user achieves or what risk is mitigated]  
+**Preconditions**: [State required to execute]  
+**Test Data**: [Only if needed]  
 **Steps**:
-1. [Specific step]
-2. [Specific step]
-3. [Specific step]
+1. [Action grounded in the analysis data]
+2. [Action]
+3. [Action]
 
 **Expected Result**:
-- [Specific expected outcome with exact values from analysis]
-- [Another expected outcome]
+- [Precise outcome referencing real copy, states, or attributes]
+- [Accessibility or error-handling expectation when applicable]
 
 **Priority**: High/Medium/Low  
 **Category**: {chunk['category']}
 
----
-
-[Continue for all elements in this category...]
-
-Analysis Data for this chunk:
+Analysis Data (authoritative):
 ```json
 {json.dumps(chunk['data'], indent=2)}
 ```
 
-Generate ALL test cases with detailed steps and exact expected results."""
+Return only the lean, necessary test cases—no filler or speculative items."""
 
         try:
             print(f"    Generating test cases for chunk {chunk_number}/{total_chunks}: {chunk['category']}")
@@ -4916,7 +4897,7 @@ def get_real_analysis():
                     'name': section.get('display_name', 'Unknown'),
                     'frames': frame_count,
                     'test_cases': test_case_count,
-                    'quality_score': calculate_section_quality(section_path)
+                    'quality_score': calculate_section_quality(section_path, test_case_count)
                 })
         
         # Get test case analysis
@@ -5204,26 +5185,52 @@ def count_section_test_cases(section_name, section_path=None):
     return total_cases
 
 
-def calculate_section_quality(section_path):
-    """Calculate quality score for a section"""
+def calculate_section_quality(section_path, test_case_count: int = 0) -> int:
+    """
+    Calculate a section quality score using real coverage signals:
+    - Actual element counts from analysis.json files in the section
+    - Actual test cases generated for the section
+    The goal is to avoid arbitrary low scores when coverage is high.
+    """
     if not os.path.exists(section_path):
-        return 75  # Default
-    
-    # Analyze frames in section
-    frame_scores = []
+        return 0
+
+    total_elements = 0
+    frame_count = 0
+
     for item in os.listdir(section_path):
         frame_path = os.path.join(section_path, item)
-        if os.path.isdir(frame_path):
-            analysis_file = os.path.join(frame_path, 'analysis.json')
-            if os.path.exists(analysis_file):
-                with open(analysis_file, 'r', encoding='utf-8') as f:
-                    frame_data = json.load(f)
-                    # Simple quality calculation based on completeness
-                    analysis = frame_data.get('analysis', {})
-                    element_count = sum(len(v) for v in analysis.values() if isinstance(v, list))
-                    frame_scores.append(min(100, element_count * 2))  # More elements = higher score
-    
-    return int(sum(frame_scores) / len(frame_scores)) if frame_scores else 75
+        if not os.path.isdir(frame_path):
+            continue
+
+        analysis_file = os.path.join(frame_path, 'analysis.json')
+        if not os.path.exists(analysis_file):
+            continue
+
+        frame_count += 1
+        try:
+            with open(analysis_file, 'r', encoding='utf-8') as f:
+                frame_data = json.load(f)
+            analysis = frame_data.get('analysis', {})
+            # Count unique, real elements (lists only)
+            total_elements += sum(
+                len(v) for v in analysis.values()
+                if isinstance(v, list)
+            )
+        except Exception:
+            continue
+
+    if frame_count == 0:
+        return 0
+
+    # Coverage score: how many tests exist relative to elements detected
+    coverage_score = min(100, int((test_case_count / max(1, total_elements)) * 100))
+    # Richness score: element density per frame (more diverse UI -> richer checks)
+    richness_score = min(100, int((total_elements / frame_count) * 4))
+
+    # Blend coverage and richness; enforce a sensible floor when we have data
+    blended = int((coverage_score * 0.7) + (richness_score * 0.3))
+    return max(10 if test_case_count > 0 else 0, min(100, blended))
 
 
 def analyze_real_test_cases(index_data=None):
