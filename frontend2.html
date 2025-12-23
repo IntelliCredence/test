@@ -1556,10 +1556,11 @@
                     addLog('🎉 Generation complete! Loading dashboard...', 'success');
                     
                     // Wait for files to be written
-                    setTimeout(() => {
-                        console.log("Switching to dashboard view...");
+                    setTimeout(async () => {
+                        console.log("Loading dashboard data before display...");
+                        await loadRealDashboardData();
+                        console.log("Switching to dashboard view with fresh data...");
                         switchView('dashboard');
-                        loadRealDashboardData();
                     }, 2000);
                 }
             }
