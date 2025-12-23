@@ -1578,25 +1578,49 @@
         }
     }, 1000);
 }
-
+function destroyAllCharts() {
+    const charts = [
+        testCaseChart, priorityChart, sectionChart, qualityChart,
+        radarChart, coverageChart, timelineChart, designBalanceChart
+    ];
+    
+    charts.forEach(chart => {
+        if (chart) {
+            try {
+                chart.destroy();
+            } catch (e) {
+                console.log('Chart cleanup:', e.message);
+            }
+        }
+    });
+    
+    testCaseChart = null;
+    priorityChart = null;
+    sectionChart = null;
+    qualityChart = null;
+    radarChart = null;
+    coverageChart = null;
+    timelineChart = null;
+    designBalanceChart = null;
+}
     function switchView(view) {
-        if (view === 'dashboard') {
-            formView.style.display = 'none';
-            dashboardView.style.display = 'block';
-            backToFormBtn.classList.remove('hidden');
-            document.getElementById('headerSubtext').textContent = 'Test case generation completed successfully';
-            
-            // Start live updates
-            startLiveUpdates();
-        } else {
-            formView.style.display = 'grid';
-            dashboardView.style.display = 'none';
-            backToFormBtn.classList.add('hidden');
-            document.getElementById('headerSubtext').textContent = 'AI-powered test case generation from Figma designs';
-            
-            // Reset form
-            generateBtn.disabled = false;
-            generateBtn.innerHTML = '<i class="fas fa-bolt"></i> Generate Test Cases';
+    if (view === 'dashboard') {
+        formView.style.display = 'none';
+        dashboardView.style.display = 'block';
+        backToFormBtn.classList.remove('hidden');
+        document.getElementById('headerSubtext').textContent = 'Test case generation completed successfully';
+        startLiveUpdates();
+    } else {
+        formView.style.display = 'grid';
+        dashboardView.style.display = 'none';
+        backToFormBtn.classList.add('hidden');
+        document.getElementById('headerSubtext').textContent = 'AI-powered test case generation from Figma designs';
+        
+        // ✅ ADD THIS LINE
+        destroyAllCharts();
+        
+        generateBtn.disabled = false;
+        generateBtn.innerHTML = '<i class="fas fa-bolt"></i> Generate Test Cases';
             progressFill.style.width = '0%';
             progressPercentage.textContent = '0%';
             progressStep.textContent = 'Ready to start';
@@ -2095,156 +2119,191 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
 
     // Initialize Charts
     function initializeCharts() {
-        // Test Case Distribution Chart
-        const testCaseCtx = document.getElementById('testCaseChart')?.getContext('2d');
-        if (testCaseCtx) {
-            testCaseChart = new Chart(testCaseCtx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Loading real data...'],
-                    datasets: [{
-                        data: [100],
-                        backgroundColor: generateColors(6)
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    cutout: '55%',
-                    plugins: {
-                        legend: { position: 'bottom' },
-                        title: {
-                            display: true,
-                            text: 'Real Test Case Distribution'
-                        }
+    console.log('🎨 Initializing charts...');
+    
+    // ✅ STEP 1: Destroy ALL existing chart instances
+    if (testCaseChart) { testCaseChart.destroy(); testCaseChart = null; }
+    if (priorityChart) { priorityChart.destroy(); priorityChart = null; }
+    if (sectionChart) { sectionChart.destroy(); sectionChart = null; }
+    if (qualityChart) { qualityChart.destroy(); qualityChart = null; }
+    if (radarChart) { radarChart.destroy(); radarChart = null; }
+    if (coverageChart) { coverageChart.destroy(); coverageChart = null; }
+    if (timelineChart) { timelineChart.destroy(); timelineChart = null; }
+    if (designBalanceChart) { designBalanceChart.destroy(); designBalanceChart = null; }
+    
+    // ✅ STEP 2: Clear any orphaned Chart.js instances on these canvases
+    const canvasIds = [
+        'testCaseChart', 'priorityChart', 'sectionTestChart', 'qualityChart',
+        'radarChart', 'coverageChart', 'timelineChart', 'designBalanceChart'
+    ];
+    
+    canvasIds.forEach(id => {
+        const canvas = document.getElementById(id);
+        if (canvas) {
+            // Get the chart instance if it exists
+            const existingChart = Chart.getChart(canvas);
+            if (existingChart) {
+                console.log(`Destroying orphaned chart on ${id}`);
+                existingChart.destroy();
+            }
+        }
+    });
+    
+    console.log('✅ All existing charts destroyed');
+    
+    // ✅ STEP 3: Now create new charts
+    // Test Case Distribution Chart
+    const testCaseCtx = document.getElementById('testCaseChart')?.getContext('2d');
+    if (testCaseCtx) {
+        testCaseChart = new Chart(testCaseCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Loading real data...'],
+                datasets: [{
+                    data: [100],
+                    backgroundColor: generateColors(6)
+                }]
+            },
+            options: {
+                responsive: true,
+                cutout: '55%',
+                plugins: {
+                    legend: { position: 'bottom' },
+                    title: {
+                        display: true,
+                        text: 'Real Test Case Distribution'
                     }
                 }
-            });
-        }
-
-        // Priority Chart
-        const priorityCtx = document.getElementById('priorityChart')?.getContext('2d');
-        if (priorityCtx) {
-            priorityChart = new Chart(priorityCtx, {
-                type: 'bar',
-                data: {
-                    labels: ['Loading...'],
-                    datasets: [{
-                        label: 'Priority',
-                        data: [0],
-                        backgroundColor: generateColors(5)
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        y: { beginAtZero: true }
-                    }
-                }
-            });
-        }
-
-        // Section Test Cases
-        const sectionCtx = document.getElementById('sectionTestChart')?.getContext('2d');
-        if (sectionCtx) {
-            sectionChart = new Chart(sectionCtx, {
-                type: 'bar',
-                data: { labels: ['Loading...'], datasets: [{ label: 'Tests', data: [0], backgroundColor: '#8b5cf6' }] },
-                options: {
-                    responsive: true,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true } }
-                }
-            });
-        }
-
-        // Quality Score Chart
-        const qualityCtx = document.getElementById('qualityChart')?.getContext('2d');
-        if (qualityCtx) {
-            qualityChart = new Chart(qualityCtx, {
-                type: 'line',
-                data: {
-                    labels: ['Loading...'],
-                    datasets: [{
-                        label: 'Quality Score',
-                        data: [0],
-                        borderColor: '#10b981',
-                        backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                        fill: true,
-                        tension: 0.4,
-                        pointRadius: 4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        y: { min: 0, max: 100 }
-                    }
-                }
-            });
-        }
-
-        // Radar Chart
-        const radarCtx = document.getElementById('radarChart')?.getContext('2d');
-        if (radarCtx) {
-            radarChart = new Chart(radarCtx, {
-                type: 'radar',
-                data: {
-                    labels: ['Accessibility', 'Consistency', 'Usability', 'Error Handling'],
-                    datasets: [{
-                        label: 'Quality Metrics',
-                        data: [0, 0, 0, 0],
-                        backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                        borderColor: '#3b82f6'
-                    }]
-                },
-                options: { responsive: true, scales: { r: { beginAtZero: true, max: 100 } } }
-            });
-        }
-
-        // Coverage Chart
-        const coverageCtx = document.getElementById('coverageChart')?.getContext('2d');
-        if (coverageCtx) {
-            coverageChart = new Chart(coverageCtx, {
-                type: 'bar',
-                data: {
-                    labels: ['Functional', 'UX', 'Accessibility', 'Security'],
-                    datasets: [{
-                        label: 'Coverage %',
-                        data: [0, 0, 0, 0],
-                        backgroundColor: generateColors(4)
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: { y: { beginAtZero: true, max: 100 } },
-                    plugins: { legend: { display: false } }
-                }
-            });
-        }
-
-        // Timeline Chart
-        const timelineCtx = document.getElementById('timelineChart')?.getContext('2d');
-        if (timelineCtx) {
-            timelineChart = new Chart(timelineCtx, {
-                type: 'line',
-                data: { labels: ['Waiting for data'], datasets: [{ label: 'Tests', data: [0], borderColor: '#f59e0b', tension: 0.35 }] },
-                options: { responsive: true, scales: { y: { beginAtZero: true } } }
-            });
-        }
-
-        // Design balance
-        const balanceCtx = document.getElementById('designBalanceChart')?.getContext('2d');
-        if (balanceCtx) {
-            designBalanceChart = new Chart(balanceCtx, {
-                type: 'bar',
-                data: {
-                    labels: ['Positives', 'Negatives', 'Corrections', 'Improvements'],
-                    datasets: [{ label: 'Count', data: [0, 0, 0, 0], backgroundColor: generateColors(4) }]
-                },
-                options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
-            });
-        }
+            }
+        });
     }
+
+    // Priority Chart
+    const priorityCtx = document.getElementById('priorityChart')?.getContext('2d');
+    if (priorityCtx) {
+        priorityChart = new Chart(priorityCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Loading...'],
+                datasets: [{
+                    label: 'Priority',
+                    data: [0],
+                    backgroundColor: generateColors(5)
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { beginAtZero: true }
+                }
+            }
+        });
+    }
+
+    // Section Test Cases
+    const sectionCtx = document.getElementById('sectionTestChart')?.getContext('2d');
+    if (sectionCtx) {
+        sectionChart = new Chart(sectionCtx, {
+            type: 'bar',
+            data: { labels: ['Loading...'], datasets: [{ label: 'Tests', data: [0], backgroundColor: '#8b5cf6' }] },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+    }
+
+    // Quality Score Chart
+    const qualityCtx = document.getElementById('qualityChart')?.getContext('2d');
+    if (qualityCtx) {
+        qualityChart = new Chart(qualityCtx, {
+            type: 'line',
+            data: {
+                labels: ['Loading...'],
+                datasets: [{
+                    label: 'Quality Score',
+                    data: [0],
+                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { min: 0, max: 100 }
+                }
+            }
+        });
+    }
+
+    // Radar Chart
+    const radarCtx = document.getElementById('radarChart')?.getContext('2d');
+    if (radarCtx) {
+        radarChart = new Chart(radarCtx, {
+            type: 'radar',
+            data: {
+                labels: ['Accessibility', 'Consistency', 'Usability', 'Error Handling'],
+                datasets: [{
+                    label: 'Quality Metrics',
+                    data: [0, 0, 0, 0],
+                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                    borderColor: '#3b82f6'
+                }]
+            },
+            options: { responsive: true, scales: { r: { beginAtZero: true, max: 100 } } }
+        });
+    }
+
+    // Coverage Chart
+    const coverageCtx = document.getElementById('coverageChart')?.getContext('2d');
+    if (coverageCtx) {
+        coverageChart = new Chart(coverageCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Functional', 'UX', 'Accessibility', 'Security'],
+                datasets: [{
+                    label: 'Coverage %',
+                    data: [0, 0, 0, 0],
+                    backgroundColor: generateColors(4)
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: { y: { beginAtZero: true, max: 100 } },
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+
+    // Timeline Chart
+    const timelineCtx = document.getElementById('timelineChart')?.getContext('2d');
+    if (timelineCtx) {
+        timelineChart = new Chart(timelineCtx, {
+            type: 'line',
+            data: { labels: ['Waiting for data'], datasets: [{ label: 'Tests', data: [0], borderColor: '#f59e0b', tension: 0.35 }] },
+            options: { responsive: true, scales: { y: { beginAtZero: true } } }
+        });
+    }
+
+    // Design balance
+    const balanceCtx = document.getElementById('designBalanceChart')?.getContext('2d');
+    if (balanceCtx) {
+        designBalanceChart = new Chart(balanceCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Positives', 'Negatives', 'Corrections', 'Improvements'],
+                datasets: [{ label: 'Count', data: [0, 0, 0, 0], backgroundColor: generateColors(4) }]
+            },
+            options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+        });
+    }
+    
+    console.log('✅ All charts initialized successfully');
+}
 
     // Update Charts with Real Data
     function updateChartsWithRealData() {
