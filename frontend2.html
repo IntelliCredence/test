@@ -1558,9 +1558,13 @@
                     // Wait for files to be written
                     setTimeout(async () => {
                         console.log("Loading dashboard data before display...");
-                        await loadRealDashboardData();
-                        console.log("Switching to dashboard view with fresh data...");
-                        switchView('dashboard');
+                        const loaded = await loadRealDashboardData();
+                        if (loaded) {
+                            console.log("Switching to dashboard view with fresh data...");
+                            switchView('dashboard');
+                        } else {
+                            addLog('Dashboard data could not be loaded. Please try refresh.', 'error');
+                        }
                     }, 2000);
                 }
             }
@@ -1801,11 +1805,13 @@ testCaseAnalysis: analysis?.testCaseAnalysis || {
         hideLoading();
         
         showNotification('✅ Dashboard loaded with accurate data!', 'success');
+        return true;
         
     } catch (error) {
         console.error('❌ Dashboard load error:', error);
         hideLoading();
         showNotification('Error loading dashboard: ' + error.message, 'error');
+        return false;
     }
 }
     // Update Dashboard with Real Data

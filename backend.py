@@ -4897,7 +4897,7 @@ def get_real_analysis():
                     'name': section.get('display_name', 'Unknown'),
                     'frames': frame_count,
                     'test_cases': test_case_count,
-                    'quality_score': calculate_section_quality(section_path)
+                    'quality_score': calculate_section_quality(section_path, test_case_count)
                 })
         
         # Get test case analysis
@@ -5185,26 +5185,52 @@ def count_section_test_cases(section_name, section_path=None):
     return total_cases
 
 
-def calculate_section_quality(section_path):
-    """Calculate quality score for a section"""
+def calculate_section_quality(section_path, test_case_count: int = 0) -> int:
+    """
+    Calculate a section quality score using real coverage signals:
+    - Actual element counts from analysis.json files in the section
+    - Actual test cases generated for the section
+    The goal is to avoid arbitrary low scores when coverage is high.
+    """
     if not os.path.exists(section_path):
-        return 75  # Default
-    
-    # Analyze frames in section
-    frame_scores = []
+        return 0
+
+    total_elements = 0
+    frame_count = 0
+
     for item in os.listdir(section_path):
         frame_path = os.path.join(section_path, item)
-        if os.path.isdir(frame_path):
-            analysis_file = os.path.join(frame_path, 'analysis.json')
-            if os.path.exists(analysis_file):
-                with open(analysis_file, 'r', encoding='utf-8') as f:
-                    frame_data = json.load(f)
-                    # Simple quality calculation based on completeness
-                    analysis = frame_data.get('analysis', {})
-                    element_count = sum(len(v) for v in analysis.values() if isinstance(v, list))
-                    frame_scores.append(min(100, element_count * 2))  # More elements = higher score
-    
-    return int(sum(frame_scores) / len(frame_scores)) if frame_scores else 75
+        if not os.path.isdir(frame_path):
+            continue
+
+        analysis_file = os.path.join(frame_path, 'analysis.json')
+        if not os.path.exists(analysis_file):
+            continue
+
+        frame_count += 1
+        try:
+            with open(analysis_file, 'r', encoding='utf-8') as f:
+                frame_data = json.load(f)
+            analysis = frame_data.get('analysis', {})
+            # Count unique, real elements (lists only)
+            total_elements += sum(
+                len(v) for v in analysis.values()
+                if isinstance(v, list)
+            )
+        except Exception:
+            continue
+
+    if frame_count == 0:
+        return 0
+
+    # Coverage score: how many tests exist relative to elements detected
+    coverage_score = min(100, int((test_case_count / max(1, total_elements)) * 100))
+    # Richness score: element density per frame (more diverse UI -> richer checks)
+    richness_score = min(100, int((total_elements / frame_count) * 4))
+
+    # Blend coverage and richness; enforce a sensible floor when we have data
+    blended = int((coverage_score * 0.7) + (richness_score * 0.3))
+    return max(10 if test_case_count > 0 else 0, min(100, blended))
 
 
 def analyze_real_test_cases(index_data=None):
